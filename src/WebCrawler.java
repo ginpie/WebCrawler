@@ -12,6 +12,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
 
@@ -25,7 +26,6 @@ public class WebCrawler {
     private static HashSet<String> onSiteURLs = new HashSet<>();
     private static HashSet<String> invalidURLs = new HashSet<>();
     private static HashMap<String, String> redirect = new HashMap<>();
-    private static HashSet<String> offSiteRedirectURLs = new HashSet<>();
     private static HashSet<String> offSite_Valid = new HashSet<>();
     private static HashSet<String> offSite_Invalid = new HashSet<>();
     private static HashSet<String> nonHtml = new HashSet<>();
@@ -38,32 +38,45 @@ public class WebCrawler {
     final private static String host = "comp3310.ddns.net";
     final private static int port = 7880;
 
-    enum Type {ON_SITE, INVALID, ON_SITE_REDIRECT, OFF_SITE}
+    enum Type {ON_SITE, INVALID, ON_SITE_REDIRECT, OFF_SITE, OFF_SITE_REDIRECT}
 
     public static void main(String[] args) throws InterruptedException, ParseException, IOException {
         System.out.println("\n************ Web Crawler start scraping ************");
         goThrough();
         // get results
         System.out.println("\n************ Here is the report ************");
-        System.out.println("Number of distinct URLs (200): " + URLs.size());
+        System.out.println("Number of distinct URLs (200): " + explored.size());
         System.out.println("Number of html pages: " + onSiteURLs.size());
         System.out.println("Number of non html objects: " + nonHtml.size());
         System.out.println("Smallest page: " + SMALLEST_PAGE + ", size: " + sizes.get(SMALLEST_PAGE));
         System.out.println("Largest page: " + LARGEST_PAGE + ", size: " + sizes.get(LARGEST_PAGE));
-        System.out.println("Oldest page: " + OLDEST_PAGE+ ", modified time: " + times.get(OLDEST_PAGE));
-        System.out.println("Newest page: " + NEWEST_PAGE+ ", modified time: " + times.get(NEWEST_PAGE));
+        
+        String pattern = "E, dd MMM yyyy HH:mm:ss z";
+        SimpleDateFormat df = new SimpleDateFormat(pattern, Locale.ENGLISH);
+        df.setTimeZone(TimeZone.getTimeZone("GMT"));
+        String od = df.format(times.get(OLDEST_PAGE));
+        String nd = df.format(times.get(NEWEST_PAGE));
+        System.out.println("Oldest page: " + OLDEST_PAGE+ ", modified time: " + od);
+        System.out.println("Newest page: " + NEWEST_PAGE+ ", modified time: " + nd);
+        
         System.out.println("Number of invalid URLs (404): " + invalidURLs.size());
         System.out.println("List of invalid URLs (404): ");
         for (String s : invalidURLs) {
-            System.out.println("    " + s);
+            System.out.println("        " + s);
         }
         System.out.println("Number of redirected URLs (30X): " + redirect.size());
-        System.out.println("Redirect map: \n");
+        System.out.println("Redirect map: ");
         for (Map.Entry<String, String> entry : redirect.entrySet()) {
-            System.out.println("source: " + entry.getKey() + ", redirect to: " + entry.getValue());
+            System.out.println("        source: " + entry.getKey() + ",     redirect to: " + entry.getValue());
         }
         System.out.println("Number of off-site valid URLs: " + offSite_Valid.size());
+        for (String s : offSite_Valid) {
+            System.out.println("        " + s);
+        }
         System.out.println("Number of off-site invalid URLs: " + offSite_Invalid.size());
+        for (String s : offSite_Invalid) {
+            System.out.println("        " + s);
+        }
     }
 
     /* 
@@ -81,7 +94,7 @@ public class WebCrawler {
         String main = host + ":" + port;
         explored.add(main);
         updateURL(main, getURL(main));
-        // iterate over the unexplored URLs 
+        // iterate over the unexplored URLs
         while (!unexplored.isEmpty()) {
             // make a copy of set to avoid the ConcurrentModificationException
             HashSet<String> tmp = new HashSet<>();
@@ -107,6 +120,7 @@ public class WebCrawler {
             // Connect to host:port via TCP
             Socket s = new Socket(host, port);
             // send GET request
+            url = uTrim(url);
             String path = url.substring(22);
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()));
             bw.write("GET " + "/" + path + " HTTP/1.0\r\n\r\n");
@@ -121,7 +135,7 @@ public class WebCrawler {
             System.out.println("URL contents retrieved: " + url);
             s.close();
         
-            TimeUnit.SECONDS.sleep(2);
+            TimeUnit.SECONDS.sleep(0);
             return content;
 
         } catch (IOException e) {
@@ -133,6 +147,7 @@ public class WebCrawler {
     // update the page size, page modified time, non html objects, links in the page, URL types
     public static void updateURL(String url, String content) throws InterruptedException, ParseException, IOException {
         Type type = parseCode(url, content);
+        url = uTrim(url);
         System.out.println(type);
         if (type == null) return;
         switch (type) {
@@ -162,18 +177,36 @@ public class WebCrawler {
                 if (!explored.contains(redir)) unexplored.add(redir);
                 break;}
             case OFF_SITE: {
-                offSiteRedirectURLs.add(url);
-                String redir = getLocation(url);
-                redirect.put(url, redir); 
-                if (isValid(url)) offSite_Valid.add(redir);
+                if (isValid(url)) offSite_Valid.add(url);
+                else offSite_Invalid.add(url);
+                break;}
+            case OFF_SITE_REDIRECT: {
+                String redir = getLocation(content);
+                // trim the web url
+                redir = uTrim(redir);
+                redirect.put(url, redir);
+                if (isValid(redir)) offSite_Valid.add(redir);
                 else offSite_Invalid.add(redir);
                 break;}
         }
         return;
     }
 
+    // URL trim
+    public static String uTrim(String url){
+        if (url.contains("http://")) url = url.substring(7);
+        if (url.substring(url.length()-1).equals("/")) url = url.substring(0,url.length()-1);
+        return url;
+    } 
+
     // parse http response code
     public static Type parseCode(String url, String content) {
+        if (url.contains("http://")) {
+            if (url.substring(7,29).equals(host+":"+port)){
+                return Type.ON_SITE;
+            } else 
+                return Type.OFF_SITE;
+        }
         // check if it is valid, invalid, on-site redirect, or off-site
         Pattern p = Pattern.compile("HTTP/1.1 (.+?) ", Pattern.DOTALL);
         Matcher m = p.matcher(content);
@@ -186,16 +219,12 @@ public class WebCrawler {
         if (code.equals("404")) return Type.INVALID;
         if (code.equals("400")) return Type.INVALID;
         if (code.substring(0,2).equals("30")) {
-            if (getLocation(content).contains(host)){
+            if (getLocation(content).contains(host+":"+port)){
                 return Type.ON_SITE_REDIRECT;
             } else {
-                return Type.OFF_SITE;
+                return Type.OFF_SITE_REDIRECT;
             }
         }
-        if (url.contains("http")) {
-            return Type.OFF_SITE;
-        }
-        
         return null;
     }
 
@@ -222,7 +251,9 @@ public class WebCrawler {
             if (m.group(1).contains("http")){
                 link = m.group(1);
             } else {
-                link = host + ":" + port + "/" + m.group(1);
+                String tmp = m.group(1);
+                if(tmp.substring(0,1).equals("/")) tmp = tmp.substring(1);
+                link = host + ":" + port + "/" + tmp;
             }
             
             System.out.println("link found: " + link);
@@ -234,6 +265,7 @@ public class WebCrawler {
 
     // check if a remote web server is valid
     public static boolean isValid(String url) throws IOException {
+        explored.add(url);
         try {
             Socket stest = new Socket(url, 80);
         } catch (UnknownHostException e) {
@@ -282,6 +314,7 @@ public class WebCrawler {
             String pattern = "E, dd MMM yyyy HH:mm:ss z";
             SimpleDateFormat df = new SimpleDateFormat(pattern, Locale.ENGLISH);
             df.setLenient(false);
+            df.setTimeZone(TimeZone.getTimeZone("GMT"));
             Date date = df.parse(dt);
             return date;
         }
@@ -292,9 +325,10 @@ public class WebCrawler {
     public static void updateTime(String url, Date date) {
         // put the datetime in the set
         times.put(url, date);
+        System.out.println(url);
         // update the oldest and newest page if possible
-        if (OLDEST_PAGE == null || date.compareTo(times.get(OLDEST_PAGE)) == -1) OLDEST_PAGE = url;
-        if (NEWEST_PAGE == null || date.compareTo(times.get(NEWEST_PAGE)) == 1) NEWEST_PAGE = url;
+        if (OLDEST_PAGE == null || date.compareTo(times.get(OLDEST_PAGE)) < 0) OLDEST_PAGE = url;
+        if (NEWEST_PAGE == null || date.compareTo(times.get(NEWEST_PAGE)) > 0) NEWEST_PAGE = url;
     }
 
 

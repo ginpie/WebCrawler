@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.regex.*;
 import java.util.stream.Collectors;
 import java.util.Date;
@@ -27,21 +28,26 @@ public class test {
 
       // String dt = "Sat, 04 May 2019 08:21:07 GMT";
       // String dt1 = "Sat, 04 May 2019 08:21:07 GMT";
-      
       // System.out.println("Last-modified time found: " + dt);
       // // conver string to datetime e.g. Sat, 04 May 2019 08:21:07
       // String pattern = "E, dd MMM yyyy HH:mm:ss z";
       // SimpleDateFormat df = new SimpleDateFormat(pattern, Locale.ENGLISH);
       // df.setLenient(false);
       // Date date = df.parse(dt);
+      
+      // SimpleDateFormat df2 = new SimpleDateFormat(pattern, Locale.ENGLISH);
+      // df2.setTimeZone(TimeZone.getTimeZone("GMT"));
+      // String dates = df2.format(date);
+      
       // Date date1 = df.parse(dt1);
-      // System.out.println(date.toString());
+      // System.out.println(dates);
       // System.out.println(date.compareTo(date1));
 
-      try {Socket s = new Socket("comp3311.ddns.net:7880/B/207.html", 80);
+      try {Socket s = new Socket("www.canberratimes.com.au", 80);
       } catch (UnknownHostException e) {
          System.out.println("Uknown Host!!");
-      }
+      }  
+         System.out.println("yes");
       
       
       // BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()));
