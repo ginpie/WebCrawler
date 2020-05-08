@@ -3,6 +3,8 @@ import java.net.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.regex.*;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
@@ -79,17 +81,20 @@ public class WebCrawler {
         String main = host + ":" + port;
         explored.add(main);
         updateURL(main, getURL(main));
-        
+        // iterate over the unexplored URLs 
         while (!unexplored.isEmpty()) {
-            for (String url : unexplored){
+            // make a copy of set to avoid the ConcurrentModificationException
+            HashSet<String> tmp = new HashSet<>();
+            tmp.addAll(unexplored);
+            Iterator<String> it = tmp.iterator();
+            while (it.hasNext()){
+                String url = it.next();
                 if (!explored.contains(url)){
                 String content = getURL(url);
                 updateURL(url, content);
                 explored.add(url);
-                unexplored.remove(url);
-                } else {
-                    unexplored.remove(url);
                 }
+                unexplored.remove(url);
             }
         }
         return;
@@ -217,10 +222,10 @@ public class WebCrawler {
             if (m.group(1).contains("http")){
                 link = m.group(1);
             } else {
-                link = host + ":" + port + m.group(1);
+                link = host + ":" + port + "/" + m.group(1);
             }
             
-            System.out.println("link found: "+link);
+            System.out.println("link found: " + link);
             URLs.add(link);
             unexplored.add(link);
         }
