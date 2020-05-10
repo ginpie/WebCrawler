@@ -37,6 +37,7 @@ public class WebCrawler {
     
     final private static String host = "comp3310.ddns.net";
     final private static int port = 7880;
+    final private static int WAIT_TIME = 0;
 
     enum Type {ON_SITE, INVALID, ON_SITE_REDIRECT, OFF_SITE, OFF_SITE_REDIRECT}
 
@@ -75,6 +76,10 @@ public class WebCrawler {
         }
         System.out.println("Number of off-site invalid URLs: " + offSite_Invalid.size());
         for (String s : offSite_Invalid) {
+            System.out.println("        " + s);
+        }
+        System.out.println("All links: ");
+        for (String s : explored) {
             System.out.println("        " + s);
         }
     }
@@ -135,7 +140,7 @@ public class WebCrawler {
             System.out.println("URL contents retrieved: " + url);
             s.close();
         
-            TimeUnit.SECONDS.sleep(0);
+            TimeUnit.SECONDS.sleep(WAIT_TIME);
             return content;
 
         } catch (IOException e) {
@@ -249,7 +254,7 @@ public class WebCrawler {
         while (m.find()) {
             String link;
             if (m.group(1).contains("http")){
-                link = m.group(1);
+                link = uTrim(m.group(1));
             } else {
                 String tmp = m.group(1);
                 if(tmp.substring(0,1).equals("/")) tmp = tmp.substring(1);
