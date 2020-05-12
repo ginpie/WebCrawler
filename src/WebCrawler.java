@@ -4,7 +4,6 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.regex.*;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
@@ -46,9 +45,9 @@ public class WebCrawler {
         goThrough();
         // get results
         System.out.println("\n************ Here is the report ************");
-        System.out.println("Number of distinct URLs (200): " + explored.size());
-        System.out.println("Number of html pages: " + onSiteURLs.size());
-        System.out.println("Number of non html objects: " + nonHtml.size());
+        System.out.println("Number of distinct URLs (both valid and invalid): " + explored.size());
+        System.out.println("Number of html pages (200 OK): " + onSiteURLs.size());
+        System.out.println("Number of non html objects (img, audio, etc): " + nonHtml.size());
         System.out.println("Smallest page: " + SMALLEST_PAGE + ", size: " + sizes.get(SMALLEST_PAGE));
         System.out.println("Largest page: " + LARGEST_PAGE + ", size: " + sizes.get(LARGEST_PAGE));
         
@@ -153,7 +152,6 @@ public class WebCrawler {
     public static void updateURL(String url, String content) throws InterruptedException, ParseException, IOException {
         Type type = parseCode(url, content);
         url = uTrim(url);
-        System.out.println(type);
         if (type == null) return;
         switch (type) {
             case ON_SITE: {
@@ -178,6 +176,7 @@ public class WebCrawler {
                 break;}
             case ON_SITE_REDIRECT: {
                 String redir = getLocation(content);
+                redir = uTrim(redir);
                 redirect.put(url, redir); 
                 if (!explored.contains(redir)) unexplored.add(redir);
                 break;}
@@ -200,6 +199,7 @@ public class WebCrawler {
     // URL trim
     public static String uTrim(String url){
         if (url.contains("http://")) url = url.substring(7);
+        if (url.contains("https://")) url = url.substring(7);
         if (url.substring(url.length()-1).equals("/")) url = url.substring(0,url.length()-1);
         return url;
     } 
