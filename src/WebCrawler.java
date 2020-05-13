@@ -80,10 +80,6 @@ public class WebCrawler {
         for (String s : offSite_Invalid) {
             System.out.println("        " + s);
         }
-        System.out.println("All links: ");
-        for (String s : URLs) {
-            System.out.println("        " + s);
-        }
     }
 
     /* 
@@ -100,6 +96,7 @@ public class WebCrawler {
     public static void goThrough() throws InterruptedException, ParseException, IOException {
         String main = host + ":" + port;
         explored.add(main);
+        URLs.add(main);
         updateURL(main, getURL(main));
         // iterate over the unexplored URLs
         while (!unexplored.isEmpty()) {
