@@ -22,8 +22,9 @@ public class WebCrawler {
     private static HashSet<String> unexplored = new HashSet<>();
     private static HashMap<String, Date> times = new HashMap<>();
     private static HashMap<String, Integer> sizes = new HashMap<>();
-    private static HashSet<String> onSiteURLs = new HashSet<>();
-    private static HashSet<String> invalidURLs = new HashSet<>();
+    private static HashSet<String> onSite = new HashSet<>();
+    private static HashSet<String> onSiteValid = new HashSet<>();
+    private static HashSet<String> invalid = new HashSet<>();
     private static HashMap<String, String> redirect = new HashMap<>();
     private static HashSet<String> offSite_Valid = new HashSet<>();
     private static HashSet<String> offSite_Invalid = new HashSet<>();
@@ -37,21 +38,18 @@ public class WebCrawler {
     final private static String host = "comp3310.ddns.net";
     final private static int port = 7880;
     final private static int WAIT_TIME = 0;
+    final private static String SCHEME = "http://";
 
-    enum Type {ON_SITE, INVALID, ON_SITE_REDIRECT, OFF_SITE, OFF_SITE_REDIRECT}
+    enum Type {ON_SITE_VALID, INVALID, ON_SITE_REDIRECT, OFF_SITE, OFF_SITE_REDIRECT}
 
     public static void main(String[] args) throws InterruptedException, ParseException, IOException {
         System.out.println("\n************ Web Crawler start scraping ************");
         goThrough();
         // get results
         System.out.println("\n************ Here is the report ************");
-        System.out.println("Number of distinct URLs (both valid and invalid): " + explored.size());
-        System.out.println("Number of html pages (200 OK): " + onSiteURLs.size());
+        System.out.println("Number of distinct URLs (both valid and invalid): " + URLs.size());
+        System.out.println("Number of html pages (200 OK): " + onSiteValid.size());
         System.out.println("Number of non html objects (img, audio, etc): " + nonHtml.size());
-
-        for (String s : nonHtml) {
-            System.out.println("        " + s);
-        }
 
         System.out.println("Smallest page: " + SMALLEST_PAGE + ", size: " + sizes.get(SMALLEST_PAGE));
         System.out.println("Largest page: " + LARGEST_PAGE + ", size: " + sizes.get(LARGEST_PAGE));
@@ -64,9 +62,9 @@ public class WebCrawler {
         System.out.println("Oldest page: " + OLDEST_PAGE+ ", modified time: " + od);
         System.out.println("Newest page: " + NEWEST_PAGE+ ", modified time: " + nd);
         
-        System.out.println("Number of invalid URLs (404): " + invalidURLs.size());
-        System.out.println("List of invalid URLs (404): ");
-        for (String s : invalidURLs) {
+        System.out.println("Number of invalid URLs (404): " + invalid.size());
+        System.out.println("List of on site invalid URLs (404): ");
+        for (String s : invalid) {
             System.out.println("        " + s);
         }
         System.out.println("Number of redirected URLs (30X): " + redirect.size());
@@ -83,7 +81,7 @@ public class WebCrawler {
             System.out.println("        " + s);
         }
         System.out.println("All links: ");
-        for (String s : explored) {
+        for (String s : URLs) {
             System.out.println("        " + s);
         }
     }
@@ -91,8 +89,8 @@ public class WebCrawler {
     /* 
         Go through all pages in the site, get
         1. all distinct URLs in the pages (all valid, invalid, or objects)
-        2. all on-site URLs (200)
-        3. all page HTML contents and their size
+        2. all on-site pages (200)
+        3. all page HTML contents
         4. all page size in bytes
         5. all non-html objects
         6. all invalid URLs (404)
@@ -129,8 +127,10 @@ public class WebCrawler {
             // Connect to host:port via TCP
             Socket s = new Socket(host, port);
             // send GET request
-            url = uTrim(url);
-            String path = url.substring(22);
+            String u = uTrim(url);
+            String path = "";
+            if (u.length() > host.length() + 1 + (port+"").length())
+                path = u.substring(host.length() + 1 + (port+"").length() + 1);;
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()));
             bw.write("GET " + "/" + path + " HTTP/1.0\r\n\r\n");
             bw.flush();
@@ -157,29 +157,31 @@ public class WebCrawler {
         Type type = parseCode(url, content);
         if (type == null) return;
         switch (type) {
-            case ON_SITE: {
+            case ON_SITE_VALID: {
                 // update type
-                onSiteURLs.add(url);
+                onSite.add(url);
+                onSiteValid.add(url);
                 // update size
                 int size = getPageSize(content);
                 sizes.put(url, size);
                 updateSize(url, size);
                 // update links in the page
-                for (String l : getLinks(content)){
+                for (String l : getLinks(url, content)){
                     if (!explored.contains(l)) unexplored.add(l);
                 }
                 // update modified time
                 Date dt = getTime(content);
                 updateTime(url, dt);
                 // update non html object
-                getNonHtml(content);
+                getNonHtml(url, content);
                 break;}
             case INVALID: {
-                invalidURLs.add(url); 
+                invalid.add(url); 
                 break;}
             case ON_SITE_REDIRECT: {
                 String redir = getLocation(content);
-                redir = uTrim(redir);
+                String path = getPath(url);
+                redir = getAbsoluteURL(path, redir);
                 redirect.put(url, redir); 
                 if (!explored.contains(redir)) unexplored.add(redir);
                 break;}
@@ -189,7 +191,8 @@ public class WebCrawler {
                 break;}
             case OFF_SITE_REDIRECT: {
                 String redir = getLocation(content);
-                redir = uTrim(redir);
+                String path = getPath(url);
+                redir = getAbsoluteURL(path, redir);
                 redirect.put(url, redir);
                 if (isValid(redir)) offSite_Valid.add(redir);
                 else offSite_Invalid.add(redir);
@@ -198,31 +201,43 @@ public class WebCrawler {
         return;
     }
 
-    // URL trim
-    public static String uTrim(String url){
-        // remove "http://", add host and port
-        if (url.contains("http://")) url = url.substring(7);
-        else if (url.contains("https://")) url = url.substring(7);
-        else {
-            if (!url.contains(host)){
-                if (url.substring(0,1).equals("/")){
-                    url = host + ":" + port + url;
-                } else url = host + ":" + port + "/" + url;
+    // find the absolute URL for a link
+    public static String getAbsoluteURL(String path, String url){
+        // find scheme first
+        if (url.substring(0,7).equals("http://") || url.substring(0,8).equals("https://")){
+            return url;
+        } else {
+            if (url.substring(0,1).equals("/")){
+                url = SCHEME + host + ":" + port + url;
+            } else {
+                url = path + "/" + url;
             }
         }
-        if (url.substring(url.length()-1).equals("/")) url = url.substring(0,url.length()-1);
-        
+        while (url.substring(url.length()-1).equals("/")) url = url.substring(0,url.length()-1);
         return url;
     } 
 
+    // find the absolute path of the current directory
+    public static String getPath(String url) {
+        for (int i = url.length() - 1; i >= 0; i-- ){
+            if (url.charAt(i) == '/') {
+                return url.substring(0, i);
+            }
+        }
+        return SCHEME + host + ":" + port;
+    }
+
+    public static String uTrim(String url) {
+        if (url.substring(0,7).equals("http://")) url = url.substring(7);
+        if (url.substring(0,8).equals("https://")) url = url.substring(8);
+        while (url.substring(url.length()-1).equals("/")) url = url.substring(0,url.length()-1);
+        return url;
+    }
+
     // parse http response code
     public static Type parseCode(String url, String content) {
-        if (url.contains("http://")) {
-            if (url.substring(7,29).equals(host+":"+port)){
-                return Type.ON_SITE;
-            } else 
-                return Type.OFF_SITE;
-        }
+        if (!isOnSite(url)) return Type.OFF_SITE;
+        url = uTrim(url);
         // check if it is valid, invalid, on-site redirect, or off-site
         Pattern p = Pattern.compile("HTTP/1.1 (.+?) ", Pattern.DOTALL);
         Matcher m = p.matcher(content);
@@ -231,16 +246,21 @@ public class WebCrawler {
             code = m.group(1);
         }
         System.out.println("Code: " + code);
-        if (code.equals("200")) return Type.ON_SITE;
-        if (code.equals("404")) return Type.INVALID;
-        if (code.equals("400")) return Type.INVALID;
-        if (code.substring(0,2).equals("30")) {
-            if (getLocation(content).contains(host+":"+port)){
-                return Type.ON_SITE_REDIRECT;
-            } else {
-                return Type.OFF_SITE_REDIRECT;
+        if (isOnSite(url)){
+            if (code.equals("200")) return Type.ON_SITE_VALID;
+            if (code.equals("404") || code.equals("400")) {
+                return Type.INVALID;
             }
-        }
+        
+            if (code.substring(0,2).equals("30")) {
+                if (getLocation(content).contains(host+":"+port)){
+                    return Type.ON_SITE_REDIRECT;
+                } else {
+                    return Type.OFF_SITE_REDIRECT;
+                }
+            }
+        } else return Type.OFF_SITE;
+        
         return null;
     }
 
@@ -256,21 +276,14 @@ public class WebCrawler {
     }
 
     // add all links exist in a page to the links set
-    public static ArrayList<String> getLinks(String content){
-        
+    public static ArrayList<String> getLinks(String url, String content){
         Pattern p = Pattern.compile("href=\"(.+?)\">", Pattern.DOTALL);
         Matcher m = p.matcher(content);
-
         ArrayList<String> l = new ArrayList<>();
         while (m.find()) {
             String link;
-            if ( !isOnSite(m.group(1)) ){
-                link = m.group(1);
-            } else {
-                String tmp = m.group(1);
-                if(tmp.substring(0,1).equals("/")) tmp = tmp.substring(1);
-                link = host + ":" + port + "/" + tmp;
-            }
+            String path = getPath(url);
+            link = getAbsoluteURL(path, m.group(1));
             if (!URLs.contains(link)) System.out.println("New link found: " + link);
             URLs.add(link);
             unexplored.add(link);
@@ -281,11 +294,9 @@ public class WebCrawler {
     // check if a remote web server is valid
     public static boolean isValid(String url) throws IOException {
         explored.add(url);
-        try {
-            Socket stest = new Socket(url, 80);
-        } catch (UnknownHostException e) {
-            return false;
-        }
+        url = uTrim(url);
+        try {Socket stest = new Socket(url, 80);} 
+        catch (UnknownHostException e) {return false;}
         return true;
     }
 
@@ -308,7 +319,7 @@ public class WebCrawler {
     }
 
     // get non html objects in a page
-    public static void getNonHtml(String content) throws InterruptedException {
+    public static void getNonHtml(String url, String content) throws InterruptedException {
         Pattern[] Pat = new Pattern[2];
         Pat[0] = Pattern.compile(" src=\"(.+?)\"", Pattern.DOTALL);
         Pat[1] = Pattern.compile(" href=\"(.+?)\"", Pattern.DOTALL);
@@ -316,14 +327,19 @@ public class WebCrawler {
         for (Pattern p : Pat){
             Matcher m = p.matcher(content);
             while (m.find()) {
-                String url = m.group(1);
-                if ( isOnSite(url) ){
-                    String c = getURL(url);
+                String u = m.group(1);
+                u = getAbsoluteURL(getPath(url), u);
+                URLs.add(u);
+                if ( isOnSite(u) ){
+                    String c = getURL(u);
                     Pattern pc = Pattern.compile("Content-Type: (.+?); ", Pattern.DOTALL);
                     Matcher mc = pc.matcher(c);
                     while (mc.find()){
+                        // System.out.println(mc.group(1));
                         if (!mc.group(1).contains("html")){
-                            nonHtml.add(url);
+                            nonHtml.add(u);
+                        } else {
+                            unexplored.add(u);
                         }
                     }
                 }
