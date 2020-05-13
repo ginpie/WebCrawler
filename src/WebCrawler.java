@@ -48,6 +48,11 @@ public class WebCrawler {
         System.out.println("Number of distinct URLs (both valid and invalid): " + explored.size());
         System.out.println("Number of html pages (200 OK): " + onSiteURLs.size());
         System.out.println("Number of non html objects (img, audio, etc): " + nonHtml.size());
+
+        for (String s : nonHtml) {
+            System.out.println("        " + s);
+        }
+
         System.out.println("Smallest page: " + SMALLEST_PAGE + ", size: " + sizes.get(SMALLEST_PAGE));
         System.out.println("Largest page: " + LARGEST_PAGE + ", size: " + sizes.get(LARGEST_PAGE));
         
@@ -85,7 +90,7 @@ public class WebCrawler {
 
     /* 
         Go through all pages in the site, get
-        1. all distinct URLs in the pages
+        1. all distinct URLs in the pages (all valid, invalid, or objects)
         2. all on-site URLs (200)
         3. all page HTML contents and their size
         4. all page size in bytes
@@ -135,7 +140,6 @@ public class WebCrawler {
             // Convert the buffered reader to string
             String content = bf.lines().collect(Collectors.joining("; "));
             bf.close();
-            // System.out.println(content);
             System.out.println("URL contents retrieved: " + url);
             s.close();
         
@@ -151,7 +155,6 @@ public class WebCrawler {
     // update the page size, page modified time, non html objects, links in the page, URL types
     public static void updateURL(String url, String content) throws InterruptedException, ParseException, IOException {
         Type type = parseCode(url, content);
-        url = uTrim(url);
         if (type == null) return;
         switch (type) {
             case ON_SITE: {
@@ -186,7 +189,6 @@ public class WebCrawler {
                 break;}
             case OFF_SITE_REDIRECT: {
                 String redir = getLocation(content);
-                // trim the web url
                 redir = uTrim(redir);
                 redirect.put(url, redir);
                 if (isValid(redir)) offSite_Valid.add(redir);
@@ -198,9 +200,18 @@ public class WebCrawler {
 
     // URL trim
     public static String uTrim(String url){
+        // remove "http://", add host and port
         if (url.contains("http://")) url = url.substring(7);
-        if (url.contains("https://")) url = url.substring(7);
+        else if (url.contains("https://")) url = url.substring(7);
+        else {
+            if (!url.contains(host)){
+                if (url.substring(0,1).equals("/")){
+                    url = host + ":" + port + url;
+                } else url = host + ":" + port + "/" + url;
+            }
+        }
         if (url.substring(url.length()-1).equals("/")) url = url.substring(0,url.length()-1);
+        
         return url;
     } 
 
@@ -253,15 +264,14 @@ public class WebCrawler {
         ArrayList<String> l = new ArrayList<>();
         while (m.find()) {
             String link;
-            if (m.group(1).contains("http")){
-                link = uTrim(m.group(1));
+            if ( !isOnSite(m.group(1)) ){
+                link = m.group(1);
             } else {
                 String tmp = m.group(1);
                 if(tmp.substring(0,1).equals("/")) tmp = tmp.substring(1);
                 link = host + ":" + port + "/" + tmp;
             }
-            
-            System.out.println("link found: " + link);
+            if (!URLs.contains(link)) System.out.println("New link found: " + link);
             URLs.add(link);
             unexplored.add(link);
         }
@@ -298,12 +308,26 @@ public class WebCrawler {
     }
 
     // get non html objects in a page
-    public static void getNonHtml(String content){
-        Pattern p = Pattern.compile("<img src=\"(.+?)>; ", Pattern.DOTALL);
-        Matcher m = p.matcher(content);
-        while (m.find()) {
-            String obj = m.group(1);
-            nonHtml.add(obj);
+    public static void getNonHtml(String content) throws InterruptedException {
+        Pattern[] Pat = new Pattern[2];
+        Pat[0] = Pattern.compile(" src=\"(.+?)\"", Pattern.DOTALL);
+        Pat[1] = Pattern.compile(" href=\"(.+?)\"", Pattern.DOTALL);
+        
+        for (Pattern p : Pat){
+            Matcher m = p.matcher(content);
+            while (m.find()) {
+                String url = m.group(1);
+                if ( isOnSite(url) ){
+                    String c = getURL(url);
+                    Pattern pc = Pattern.compile("Content-Type: (.+?); ", Pattern.DOTALL);
+                    Matcher mc = pc.matcher(c);
+                    while (mc.find()){
+                        if (!mc.group(1).contains("html")){
+                            nonHtml.add(url);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -326,16 +350,24 @@ public class WebCrawler {
         return null;
     }
 
-    //update the timestamps
+    // update the timestamps
     public static void updateTime(String url, Date date) {
         // put the datetime in the set
         times.put(url, date);
-        System.out.println(url);
         // update the oldest and newest page if possible
         if (OLDEST_PAGE == null || date.compareTo(times.get(OLDEST_PAGE)) < 0) OLDEST_PAGE = url;
         if (NEWEST_PAGE == null || date.compareTo(times.get(NEWEST_PAGE)) > 0) NEWEST_PAGE = url;
     }
 
-
+    // check if the url is on site
+    public static boolean isOnSite(String url){
+        if (url.contains("http://")){
+            if (url.substring(7, 7 + host.length()).equals(host)) return true;
+            else return false;
+        } else if (url.contains("https://")){
+            if (url.substring(8, 8 + host.length()).equals(host)) return true;
+            else return false;
+        } else return true;
+    }
     
 }
